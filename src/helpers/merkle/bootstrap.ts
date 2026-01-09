@@ -34,9 +34,7 @@ export function initMerle() {
       }
       if (parsed && parsed.type === 'WB_SNAPSHOT_REQUEST') {
         try {
-          // Always send the full whiteboard state as a WB_SNAPSHOT JSON message to the requester.
-          // This ensures new peers receive the latest entity labels, attributes, and relations
-          // regardless of the underlying adapter/merkle sync state.
+
           const wbState = getWBState()
           try {
             PeerConnection.sendConnection(from, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) })
