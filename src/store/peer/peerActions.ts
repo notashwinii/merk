@@ -37,7 +37,11 @@ export const startPeer: () => (dispatch: Dispatch) => Promise<void>
                     const wbState = getWBState()
                     // create a checkpoint node representing current entities as create ops
                     const ops = Object.values(wbState.entities).map((e: any) => ({ opId: `snapshot-${e.id}`, actor: 'snapshot', ts: Date.now(), type: 'ENTITY_CREATE', payload: e }))
-                    const node = { links: [], payload: ops, meta: { author: 'snapshot', ts: Date.now() } }
+                    // build node using adapter so it links to current heads per IR
+                    let node: any = { links: [], payload: ops, meta: { author: 'snapshot', ts: Date.now() } }
+                    if (adapter && typeof adapter.createNodeFromOps === 'function') {
+                      try { node = adapter.createNodeFromOps(ops, 'snapshot') } catch (e) { console.warn('createNodeFromOps error', e) }
+                    }
                     // if adapter supports targeted send, use it to send merkle root with payload to the joining peer
                     if (adapter && adapter.sendRootToPeer) {
                         try { await adapter.sendRootToPeer(peerId, undefined, node) } catch (e) { console.warn('sendRootToPeer error', e) }
