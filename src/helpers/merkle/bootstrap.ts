@@ -2,7 +2,7 @@ import { createMerleAdapter } from './adapter'
 import { createWalker } from './walker'
 import * as dagStore from './dagStore'
 import { PeerConnection, DataType } from '../peer'
-import { applyOp, subscribe as subscribeWB, applySnapshot } from '../whiteboard'
+import { applyOp, subscribe as subscribeWB, applySnapshot, getState as getWBState } from '../whiteboard'
 
 let adapter: any = null
 let walker: any = null
@@ -32,6 +32,24 @@ export function initMerle() {
       // handle snapshot messages
       if (parsed && parsed.type === 'WB_SNAPSHOT' && parsed.state) {
         try { applySnapshot(parsed.state) } catch (e) { console.warn('applySnapshot error', e) }
+        return
+      }
+      // handle explicit snapshot requests (joiner asked for current state)
+      if (parsed && parsed.type === 'WB_SNAPSHOT_REQUEST') {
+        try {
+          // build checkpoint node from current whiteboard state and send to requester via adapter
+          const wbState = getWBState()
+          const ops = Object.values(wbState.entities).map((e: any) => ({ opId: `snapshot-${e.id}`, actor: 'snapshot', ts: Date.now(), type: 'ENTITY_CREATE', payload: e }))
+          const node = { links: [], payload: ops, meta: { author: 'snapshot', ts: Date.now() } }
+          if (adapter && adapter.sendRootToPeer) {
+            try { adapter.sendRootToPeer(from, undefined, node) } catch (e) { console.warn('sendRootToPeer error', e) }
+          } else {
+            // fallback
+            try { PeerConnection.sendConnection(from, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) }) } catch (e) { console.warn('send snapshot error', e) }
+          }
+        } catch (e) {
+          console.warn('WB_SNAPSHOT_REQUEST handling error', e)
+        }
         return
       }
       // forward merkle messages to adapter
