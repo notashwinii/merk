@@ -29,6 +29,14 @@ export function createWalker(adapter: any, applier: OpApplier) {
     }
     await dagStore.Put(node)
     seenCids.add(cid)
+    // update heads in adapter (if available) to keep IR consistent
+    try {
+      if (adapter && typeof adapter.updateHeads === 'function') {
+        await adapter.updateHeads(cid, node)
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   async function fetchMissingNodes(rootCid: string, fromPeer?: string) : Promise<Map<string, Node>> {
@@ -70,9 +78,33 @@ export function createWalker(adapter: any, applier: OpApplier) {
         indegree.set(cid, (indegree.get(cid) || 0) + 1)
       }
     })
+    // deterministic ordering comparator for concurrent nodes
+    function sortKey(cid: string) {
+      const node = nodesMap.get(cid)!
+      let minTs = Number.MAX_SAFE_INTEGER
+      if (Array.isArray(node.payload) && node.payload.length > 0) {
+        for (const op of node.payload) {
+          if (op && typeof op.ts === 'number' && op.ts < minTs) minTs = op.ts
+        }
+      }
+      if (minTs === Number.MAX_SAFE_INTEGER) {
+        if (node.meta && typeof node.meta.ts === 'number') minTs = node.meta.ts
+        else minTs = 0
+      }
+      const author = (node.meta && node.meta.author) || (Array.isArray(node.payload) && node.payload[0] && node.payload[0].actor) || ''
+      return { minTs, author, cid }
+    }
+
     const q: string[] = []
     indegree.forEach((deg, cid) => {
       if (deg === 0) q.push(cid)
+    })
+    // sort initial zero-indegree nodes deterministically
+    q.sort((a, b) => {
+      const A = sortKey(a), B = sortKey(b)
+      if (A.minTs !== B.minTs) return A.minTs - B.minTs
+      if (A.author !== B.author) return A.author < B.author ? -1 : 1
+      return A.cid < B.cid ? -1 : 1
     })
     const order: string[] = []
     while (q.length > 0) {
@@ -81,7 +113,16 @@ export function createWalker(adapter: any, applier: OpApplier) {
       const outs = adj.get(n) || []
       for (const m of outs) {
         indegree.set(m, (indegree.get(m) || 0) - 1)
-        if (indegree.get(m) === 0) q.push(m)
+        if (indegree.get(m) === 0) {
+          q.push(m)
+          // keep q sorted deterministically
+          q.sort((a, b) => {
+            const A = sortKey(a), B = sortKey(b)
+            if (A.minTs !== B.minTs) return A.minTs - B.minTs
+            if (A.author !== B.author) return A.author < B.author ? -1 : 1
+            return A.cid < B.cid ? -1 : 1
+          })
+        }
       }
     }
     // if some nodes were not in indegree (isolated), append them

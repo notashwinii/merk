@@ -15,16 +15,47 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
   let onRootAnnounced: (cid: string, from?: string) => void = () => {};
   const seenCids: Set<string> = new Set();
   const pendingRequests: Map<string, (node: Node | null) => void> = new Map();
+  // heads tracking for Implementation Rule (IR)
+  const heads: Set<string> = new Set();
+
+  function updateHeads(cid: string, node: Node) {
+    try {
+      // remove referenced links from heads (they are no longer heads)
+      for (const l of node.links || []) {
+        if (heads.has(l)) heads.delete(l)
+      }
+      // add this cid as a new head
+      heads.add(cid)
+    } catch (e) {
+      // ignore errors
+    }
+  }
+
+  function createNodeFromOps(ops: Node['payload'], author?: string): Node {
+    const node: Node = {
+      links: Array.from(heads),
+      payload: ops || [],
+      meta: { author: author || 'local', ts: Date.now() }
+    }
+    return node
+  }
+
+  async function createAndBroadcast(boardId: string | undefined, ops: Node['payload'], author?: string) {
+    const node = createNodeFromOps(ops, author)
+    return await broadcastRoot(boardId, node)
+  }
 
   async function broadcastRoot(boardId: string | undefined, node?: Node) {
     if (!node) throw new Error('node required for broadcastRoot in payload-in-broadcast mode');
     const cid = await cidFor(node);
     // store locally
-    await dagStore.Put(node);
-    // notify local consumer immediately so creator also applies its own node
-    try { onNodeReceived(node, undefined) } catch (e) { /* ignore */ }
-    // mark seen
-    seenCids.add(cid);
+  await dagStore.Put(node);
+  // update heads per IR
+  try { updateHeads(cid, node) } catch (e) { /* ignore */ }
+  // notify local consumer immediately so creator also applies its own node
+  try { onNodeReceived(node, undefined) } catch (e) { /* ignore */ }
+  // mark seen
+  seenCids.add(cid);
     const msg: MerkleRootMsg = {
       type: 'MERKLE_ROOT',
       boardId,
@@ -63,11 +94,13 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
       // if we've already seen this cid, ignore
       if (seenCids.has(m.cid)) return
       // otherwise try to obtain the node (payload may be included)
-      if (m.payload) {
+            if (m.payload) {
         try {
           const ok = await verifyCid(m.payload, m.cid);
           if (ok) {
             await dagStore.Put(m.payload);
+            // update heads for newly received payload
+            try { updateHeads(m.cid, m.payload) } catch (e) { /* ignore */ }
             seenCids.add(m.cid);
             onNodeReceived(m.payload, from);
             // gossip: forward the root to other peers so it reaches the whole room
@@ -88,6 +121,8 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
           if (node) {
             // store and apply
             await dagStore.Put(node);
+            // update heads for fetched node
+            try { updateHeads(m.cid, node) } catch (e) { /* ignore */ }
             seenCids.add(m.cid);
             onNodeReceived(node, from);
             try { broadcastToPeers(m) } catch (e) { /* ignore */ }
@@ -112,6 +147,8 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
         const ok = await verifyCid(m.node, m.cid);
         if (ok) {
           await dagStore.Put(m.node);
+          // update heads for node response
+          try { updateHeads(m.cid, m.node) } catch (e) { /* ignore */ }
           if (!seenCids.has(m.cid)) {
             seenCids.add(m.cid);
             onNodeReceived(m.node, from);
@@ -159,6 +196,10 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
     sendRootToPeer,
     requestNode,
     onIncomingMessage,
+    createNodeFromOps,
+    createAndBroadcast,
+    updateHeads,
+    getHeads: () => Array.from(heads),
     set onNodeReceived(fn: (node: Node, from?: string) => void) {
       onNodeReceived = fn;
     },
