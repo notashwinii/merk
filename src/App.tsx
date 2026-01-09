@@ -78,78 +78,59 @@ export const App: React.FC = () => {
         }
     }
 
+    if (!peer.started) {
+        return (
+            <div style={{height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <Button size="large" type="primary" onClick={handleStartSession} loading={peer.loading}>Start</Button>
+            </div>
+        )
+    }
+
     return (
-        <Row justify={"center"} align={"top"}>
-            <Col xs={24} sm={24} md={20} lg={16} xl={12}>
-                <Card>
-                    <Title level={2} style={{textAlign: "center"}}>P2P File Transfer</Title>
-                        <Card hidden={peer.started}>
-                            <Button onClick={handleStartSession} loading={peer.loading}>Start</Button>
-                        </Card>
-                        <Card hidden={!peer.started}>
-                            <Space direction="horizontal">
-                                <div>ID: {peer.id}</div>
-                                <Button icon={<CopyOutlined/>} onClick={async () => {
-                                    await navigator.clipboard.writeText(peer.id || "")
-                                    message.info("Copied: " + peer.id)
-                                }}/>
-                                <Button danger onClick={handleStopSession}>Stop</Button>
-                            </Space>
-                        </Card>
-                        <div hidden={!peer.started}>
-                            <Card title="Whiteboard">
-                                <WhiteboardCanvas />
-                            </Card>
-                            <Card>
-                                <Space direction="horizontal">
-                                    <Input placeholder={"ID"}
-                                           onChange={e => dispatch(connectionAction.changeConnectionInput(e.target.value))}
-                                           required={true}
-                                           />
-                                    <Button onClick={handleConnectOtherPeer}
-                                            loading={connection.loading}>Connect</Button>
-                                </Space>
-                            </Card>
+        <div style={{height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden'}}>
+            {/* Full-page canvas */}
+            <WhiteboardCanvas />
 
-                            <Card title="Connection">
-                                {
-                                    connection.list.length === 0
-                                        ? <div>Waiting for connection ...</div>
-                                        : <div>
-                                            Select a connection
-                                            <Menu selectedKeys={connection.selectedId ? [connection.selectedId] : []}
-                                                  onSelect={(item) => dispatch(connectionAction.selectItem(item.key))}
-                                                  items={connection.list.map(e => getItem(e, e, null))}/>
-                                        </div>
-                                }
-
-                            </Card>
-                            <Card title="Send File">
-                                <Upload fileList={fileList}
-                                        maxCount={1}
-                                        onRemove={() => setFileList([])}
-                                        beforeUpload={(file) => {
-                                            setFileList([file])
-                                            return false
-                                        }}>
-                                    <Button icon={<UploadOutlined/>}>Select File</Button>
-                                </Upload>
-                                <Button
-                                    type="primary"
-                                    onClick={handleUpload}
-                                    disabled={fileList.length === 0}
-                                    loading={sendLoading}
-                                    style={{marginTop: 16}}
-                                >
-                                    {sendLoading ? 'Sending' : 'Send'}
-                                </Button>
-                            </Card>
+            {/* Top-right control panel: start/stop, peer id, input + connect */}
+            <div style={{position: 'fixed', top: 12, right: 12, zIndex: 1200, display: 'flex', flexDirection: 'column', gap: 8}}>
+                <div style={{background: 'rgba(15,23,42,0.9)', color: '#fff', padding: 8, borderRadius: 8, display: 'flex', gap: 8, alignItems: 'center'}}>
+                    {!peer.started ? (
+                        <Button onClick={handleStartSession} loading={peer.loading}>Start</Button>
+                    ) : (
+                        <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
+                            <div style={{fontSize: 12}}>ID: <span style={{fontWeight: 600}}>{peer.id}</span></div>
+                            <Button icon={<CopyOutlined/>} onClick={async () => {
+                                await navigator.clipboard.writeText(peer.id || "")
+                                message.info("Copied: " + peer.id)
+                            }}/>
+                            <Button danger onClick={handleStopSession}>Stop</Button>
                         </div>
-                </Card>
-            </Col>
+                    )}
+                </div>
 
+                <div style={{background: 'rgba(255,255,255,0.95)', padding: 8, borderRadius: 8, boxShadow: '0 6px 18px rgba(2,6,23,0.12)'}}>
+                    <Space>
+                        <Input placeholder={"Peer ID"}
+                               value={connection.id || ''}
+                               onChange={e => dispatch(connectionAction.changeConnectionInput(e.target.value))}
+                               style={{width: 160}}
+                        />
+                        <Button onClick={handleConnectOtherPeer} loading={connection.loading}>Connect</Button>
+                    </Space>
+                </div>
 
-        </Row>
+                {/* Connection list dropdown (optional) */}
+                <div style={{background: 'rgba(255,255,255,0.95)', padding: 8, borderRadius: 8, minWidth: 240}}>
+                    {connection.list.length === 0 ? (
+                        <div style={{fontSize: 13, color: '#6b7280'}}>Waiting for connection …</div>
+                    ) : (
+                        <Menu selectedKeys={connection.selectedId ? [connection.selectedId] : []}
+                              onSelect={(item) => dispatch(connectionAction.selectItem(item.key))}
+                              items={connection.list.map(e => getItem(e, e, null))} />
+                    )}
+                </div>
+            </div>
+        </div>
     )
 }
 
