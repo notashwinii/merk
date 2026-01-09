@@ -47,6 +47,14 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
 
   async function broadcastRoot(boardId: string | undefined, node?: Node) {
     if (!node) throw new Error('node required for broadcastRoot in payload-in-broadcast mode');
+    // Enforce Implementation Rule (IR): ensure the node's links contain all current heads
+    try {
+      const currentHeads = Array.from(heads)
+      const merged = Array.from(new Set([...(node.links || []), ...currentHeads]))
+      node.links = merged
+    } catch (e) {
+      // ignore
+    }
     const cid = await cidFor(node);
     // store locally
   await dagStore.Put(node);
@@ -70,6 +78,14 @@ export function createMerleAdapter(config: MerkleAdapterConfig) {
   // send a MERKLE_ROOT with payload to a single peer (used for joiner snapshot)
   async function sendRootToPeer(peerId: string, boardId: string | undefined, node: Node) {
     if (!peerId) throw new Error('peerId required')
+    // Enforce Implementation Rule (IR) for targeted send as well
+    try {
+      const currentHeads = Array.from(heads)
+      const merged = Array.from(new Set([...(node.links || []), ...currentHeads]))
+      node.links = merged
+    } catch (e) {
+      // ignore
+    }
     const cid = await cidFor(node);
     await dagStore.Put(node);
     // mark seen locally
