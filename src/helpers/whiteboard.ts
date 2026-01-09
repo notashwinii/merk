@@ -5,7 +5,15 @@ type Entity = {
   label: string;
 }
 
-const state: { entities: Record<string, Entity> } = { entities: {} }
+type Relation = {
+  id: string;
+  source: string; // entity id
+  target: string; // entity id
+  label?: string;
+  cardinality?: string; // e.g. '1:N', '1:1', 'N:M'
+}
+
+const state: { entities: Record<string, Entity>, relations: Record<string, Relation> } = { entities: {}, relations: {} }
 
 // undo/redo stacks: store snapshots of entities
 const undoStack: Array<Record<string, Entity>> = []
@@ -32,6 +40,23 @@ export async function applyOp(op: any) {
   if (t === 'ENTITY_CREATE') {
     const e = op.payload
     state.entities[e.id] = { id: e.id, x: e.x, y: e.y, label: e.label }
+    emit()
+  } else if (t === 'ENTITY_UPDATE') {
+    const { id, label } = op.payload
+    const e = state.entities[id]
+    if (e) { e.label = label; emit() }
+  } else if (t === 'ENTITY_ADD_ATTR') {
+    const { id, attr } = op.payload
+    // store attributes as part of label for simple POC: append to label string in parentheses
+    const e = state.entities[id]
+    if (e) { e.label = e.label + ' • ' + attr; emit() }
+  } else if (t === 'RELATION_CREATE') {
+    const r = op.payload as Relation
+    state.relations[r.id] = { ...r }
+    emit()
+  } else if (t === 'RELATION_DELETE') {
+    const { id } = op.payload
+    delete state.relations[id]
     emit()
   } else if (t === 'ENTITY_MOVE') {
     const { id, x, y } = op.payload
@@ -69,9 +94,13 @@ export function getState() { return state }
 export function applySnapshot(snapshot: { entities: Record<string, Entity> }) {
   // replace in-memory state with snapshot
   state.entities = { ...snapshot.entities }
+  // if snapshot includes relations, use them
+  if ((snapshot as any).relations) state.relations = { ...((snapshot as any).relations) }
   // clear undo/redo when snapshot applied (fresh join)
   undoStack.length = 0
   redoStack.length = 0
   // notify listeners
   emit()
 }
+
+export function getRelations() { return state.relations }
