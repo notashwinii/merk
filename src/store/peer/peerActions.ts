@@ -30,8 +30,8 @@ export const startPeer: () => (dispatch: Dispatch) => Promise<void>
                 dispatch(removeConnectionList(peerId))
             })
             PeerConnection.onConnectionReceiveData(peerId, (file) => {
-                message.info("Receiving file " + file.fileName + " from " + peerId)
                 if (file.dataType === DataType.FILE) {
+                    message.info("Receiving file " + file.fileName + " from " + peerId)
                     download(file.file || '', file.fileName || "fileName", file.fileType)
                 }
             })
