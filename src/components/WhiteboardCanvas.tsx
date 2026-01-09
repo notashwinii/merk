@@ -12,13 +12,10 @@ export const WhiteboardCanvas: React.FC = () => {
   const [state, setState] = useState(getState())
   const adapterRef = useRef<any>(null)
 
-  // pan & zoom
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
 
-  // drag state for nodes
   const dragRef = useRef<{ id?: string, startMouseX?: number, startMouseY?: number, startX?: number, startY?: number }>({})
-  // panning state
   const panRef = useRef<{ dragging?: boolean, startX?: number, startY?: number, startPanX?: number, startPanY?: number }>({})
 
   useEffect(() => {
@@ -37,7 +34,6 @@ export const WhiteboardCanvas: React.FC = () => {
   const svgRef = useRef<SVGSVGElement | null>(null)
 
   const clientToWorld = useCallback((clientX: number, clientY: number) => {
-    // convert client coords -> world coords taking pan & scale into account
     const rect = svgRef.current?.getBoundingClientRect()
     const cx = clientX - (rect?.left || 0)
     const cy = clientY - (rect?.top || 0)
@@ -65,11 +61,9 @@ export const WhiteboardCanvas: React.FC = () => {
   const onNodePointerDown = (e: React.PointerEvent, ent: Entity) => {
     (e.target as Element).setPointerCapture(e.pointerId)
     dragRef.current = { id: ent.id, startMouseX: e.clientX, startMouseY: e.clientY, startX: ent.x, startY: ent.y }
-    // show a single moving indicator (use a fixed key so it updates instead of stacking)
-    try { message.open({ content: 'Moving...', key: 'wb_move', duration: 0 }) } catch (e) { /* ignore */ }
+    try { message.open({ content: 'Moving...', key: 'wb_move', duration: 0 }) } catch (e) { }
   }
 
-  // ER features: relation creation mode
   const connectMode = useRef<boolean>(false)
   const connectSource = useRef<string | null>(null)
 
@@ -89,7 +83,6 @@ export const WhiteboardCanvas: React.FC = () => {
     const source = connectSource.current
     const target = ent.id
     if (source === target) { message.warning('Cannot connect entity to itself'); connectSource.current = null; return }
-    // create relation op
     const rid = 'rel-' + Math.random().toString(36).slice(2,9)
     const rel = { id: rid, source, target, label: '', cardinality: '1:N' }
     const op = { opId: 'op-' + rid + '-' + Date.now(), actor: 'me', ts: Date.now(), type: 'RELATION_CREATE', payload: rel }
@@ -120,7 +113,6 @@ export const WhiteboardCanvas: React.FC = () => {
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
-    // node dragging
     const d = dragRef.current
     if (d && d.id) {
       const dx = (e.clientX - (d.startMouseX || 0)) / scale
@@ -137,11 +129,9 @@ export const WhiteboardCanvas: React.FC = () => {
           adapter.broadcastRoot(undefined, node)
         }
       }
-      // lightweight feedback handled on pointer up to avoid flooding
       return
     }
 
-    // panning
     const p = panRef.current
     if (p && p.dragging) {
       const dx = e.clientX - (p.startX || 0)
@@ -154,8 +144,7 @@ export const WhiteboardCanvas: React.FC = () => {
     const d = dragRef.current
     if (d && d.id) {
       dragRef.current = {}
-      // finalize moving feedback
-      try { message.success({ content: 'Moved', key: 'wb_move', duration: 1.2 }) } catch (err) { /* ignore */ }
+      try { message.success({ content: 'Moved', key: 'wb_move', duration: 1.2 }) } catch (err) { }
     }
     const p = panRef.current
     if (p && p.dragging) {
@@ -163,7 +152,6 @@ export const WhiteboardCanvas: React.FC = () => {
     }
   }
 
-  // keyboard shortcuts: A = add, Ctrl+Z = undo, Ctrl+Y or Ctrl+Shift+Z = redo, 0 = reset zoom
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'a' || e.key === 'A') {
@@ -182,7 +170,6 @@ export const WhiteboardCanvas: React.FC = () => {
   }, [handleAdd])
 
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
-    // start panning when middle button or space key pressed
     const isPan = e.button === 1 || (e as any).buttons === 4 || (e as any).shiftKey
     if (isPan) {
       panRef.current = { dragging: true, startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y }
@@ -194,7 +181,6 @@ export const WhiteboardCanvas: React.FC = () => {
     const delta = -e.deltaY
     const factor = delta > 0 ? 1.1 : 0.9
     const newScale = Math.max(0.25, Math.min(4, scale * factor))
-    // zoom around mouse pointer
     const rect = svgRef.current?.getBoundingClientRect()
     const cx = e.clientX - (rect?.left || 0)
     const cy = e.clientY - (rect?.top || 0)
@@ -207,7 +193,6 @@ export const WhiteboardCanvas: React.FC = () => {
 
   return (
     <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-      {/* small toolbar (top-left) for common actions */}
       <div style={{position: 'absolute', left: 12, top: 12, zIndex: 1100, display: 'flex', gap: 8}}>
         <Tooltip title="Undo (Ctrl+Z)"><button onClick={() => { undo(); message.info('Undo') }} style={{padding: 8, borderRadius: 6}}>Undo</button></Tooltip>
         <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: 8, borderRadius: 6}}>Redo</button></Tooltip>
@@ -223,7 +208,6 @@ export const WhiteboardCanvas: React.FC = () => {
             </marker>
           </defs>
           <g transform={`translate(${pan.x},${pan.y}) scale(${scale})`}>
-            {/* draw relations as lines under entities */}
             {Object.values(relations).map((r: any) => {
               const s = (state as any).entities[r.source]
               const t = (state as any).entities[r.target]
@@ -237,7 +221,6 @@ export const WhiteboardCanvas: React.FC = () => {
               )
             })}
 
-            {/* entity nodes */}
             {entities.map((e) => (
               <g key={e.id} transform={`translate(${e.x},${e.y})`}>
                 <rect x={-60} y={-20} rx={8} ry={8} width={120} height={40} fill="#ffffff" stroke="#0f172a" strokeWidth={1} style={{filter: 'drop-shadow(0 2px 6px rgba(2,6,23,0.12))', cursor: 'grab'}} onPointerDown={(ev) => onNodePointerDown(ev, e)} onClick={() => onEntityClick(e)} onDoubleClick={() => onEntityDoubleClick(e)} />

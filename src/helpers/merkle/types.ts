@@ -1,18 +1,15 @@
-/*
- * Merkle-CRDT types
- */
 export interface Op {
   opId: string;
   actor: string;
-  ts: number; // epoch ms or lamport
+  ts: number;
   type: string;
   payload: any;
   deps?: string[];
 }
 
 export interface Node {
-  links: string[]; // child/root CIDs
-  payload: Op[]; // array of ops (batched)
+  links: string[];
+  payload: Op[];
   meta?: {
     boardId?: string;
     author?: string;
@@ -21,14 +18,12 @@ export interface Node {
   };
 }
 
-// Transport envelopes
 export interface MerkleRootMsg {
   type: 'MERKLE_ROOT';
   boardId?: string;
   cid: string;
   ts: number;
   from?: string;
-  // optional node payload included for low-latency
   payload?: Node;
 }
 

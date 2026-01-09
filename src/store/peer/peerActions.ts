@@ -27,26 +27,19 @@ export const startPeer: () => (dispatch: Dispatch) => Promise<void>
             const peerId = conn.peer
             message.info("Incoming connection: " + peerId)
             dispatch(addConnectionList(peerId))
-            // send current whiteboard snapshot to the incoming peer so they get existing entities
                 try {
-                    // ensure merkle adapter initialized
                     initMerle()
                     const adapter = getAdapter()
-                    // give a short moment for any in-flight walker syncs to finish so snapshot includes recently received ops
                     await new Promise((res) => setTimeout(res, 250))
                     const wbState = getWBState()
-                    // create a checkpoint node representing current entities as create ops
                     const ops = Object.values(wbState.entities).map((e: any) => ({ opId: `snapshot-${e.id}`, actor: 'snapshot', ts: Date.now(), type: 'ENTITY_CREATE', payload: e }))
-                    // build node using adapter so it links to current heads per IR
                     let node: any = { links: [], payload: ops, meta: { author: 'snapshot', ts: Date.now() } }
                     if (adapter && typeof adapter.createNodeFromOps === 'function') {
                       try { node = adapter.createNodeFromOps(ops, 'snapshot') } catch (e) { console.warn('createNodeFromOps error', e) }
                     }
-                    // if adapter supports targeted send, use it to send merkle root with payload to the joining peer
                     if (adapter && adapter.sendRootToPeer) {
                         try { await adapter.sendRootToPeer(peerId, undefined, node) } catch (e) { console.warn('sendRootToPeer error', e) }
                     } else {
-                        // fallback: send raw snapshot as before
                         PeerConnection.sendConnection(peerId, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) })
                     }
                 } catch (e) {

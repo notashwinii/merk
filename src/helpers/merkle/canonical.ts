@@ -7,7 +7,6 @@ function isPlainObject(v: any): boolean {
 function canonicalizeValue(v: any): any {
   if (v === null || v === undefined) return null;
   if (Array.isArray(v)) {
-    // canonicalize array elements
     return v.map(canonicalizeValue);
   }
   if (isPlainObject(v)) {
@@ -18,7 +17,6 @@ function canonicalizeValue(v: any): any {
     }
     return obj;
   }
-  // primitives
   return v;
 }
 
@@ -33,13 +31,11 @@ export function canonicalize(obj: any): Uint8Array {
 }
 
 export function canonicalizeNode(node: Node): Uint8Array {
-  // ensure links are sorted for canonical node representation
   const copy: any = {
     links: (node.links || []).slice().sort(),
     payload: node.payload ? node.payload.slice() : [],
     meta: node.meta || {},
   };
-  // canonicalize payload array (sort by ts then opId) for determinism
   if (Array.isArray(copy.payload)) {
     copy.payload.sort((a: any, b: any) => {
       if (a.ts !== b.ts) return a.ts - b.ts;

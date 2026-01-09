@@ -14,7 +14,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
   async function processNode(node: Node) {
     const cid = await cidFor(node)
     if (seenCids.has(cid)) return
-    // apply ops in node.payload in order
     if (Array.isArray(node.payload)) {
       for (const op of node.payload) {
         if (!op || !op.opId) continue
@@ -29,13 +28,11 @@ export function createWalker(adapter: any, applier: OpApplier) {
     }
     await dagStore.Put(node)
     seenCids.add(cid)
-    // update heads in adapter (if available) to keep IR consistent
     try {
       if (adapter && typeof adapter.updateHeads === 'function') {
         await adapter.updateHeads(cid, node)
       }
     } catch (e) {
-      // ignore
     }
   }
 
@@ -48,13 +45,11 @@ export function createWalker(adapter: any, applier: OpApplier) {
       const local = await dagStore.Get(cid)
       if (local) {
         fetched.set(cid, local)
-        // push links
         for (const l of local.links || []) {
           if (!seenCids.has(l) && !fetched.has(l)) missingStack.push(l)
         }
         continue
       }
-      // request from peers
       const node = await adapter.requestNode(cid, fromPeer, 5000)
       if (!node) throw new Error(`Failed to fetch node ${cid}`)
       fetched.set(cid, node)
@@ -66,7 +61,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
   }
 
   function topoSortNodes(nodesMap: Map<string, Node>): string[] {
-    // build adjacency where edge: link -> cid
     const indegree = new Map<string, number>()
     const adj = new Map<string, string[]>()
     nodesMap.forEach((node, cid) => {
@@ -78,7 +72,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
         indegree.set(cid, (indegree.get(cid) || 0) + 1)
       }
     })
-    // deterministic ordering comparator for concurrent nodes
     function sortKey(cid: string) {
       const node = nodesMap.get(cid)!
       let minTs = Number.MAX_SAFE_INTEGER
@@ -99,7 +92,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
     indegree.forEach((deg, cid) => {
       if (deg === 0) q.push(cid)
     })
-    // sort initial zero-indegree nodes deterministically
     q.sort((a, b) => {
       const A = sortKey(a), B = sortKey(b)
       if (A.minTs !== B.minTs) return A.minTs - B.minTs
@@ -115,7 +107,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
         indegree.set(m, (indegree.get(m) || 0) - 1)
         if (indegree.get(m) === 0) {
           q.push(m)
-          // keep q sorted deterministically
           q.sort((a, b) => {
             const A = sortKey(a), B = sortKey(b)
             if (A.minTs !== B.minTs) return A.minTs - B.minTs
@@ -125,7 +116,6 @@ export function createWalker(adapter: any, applier: OpApplier) {
         }
       }
     }
-    // if some nodes were not in indegree (isolated), append them
     nodesMap.forEach((_node, cid) => { if (!order.includes(cid)) order.push(cid) })
     return order
   }

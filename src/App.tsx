@@ -88,10 +88,8 @@ export const App: React.FC = () => {
 
     return (
         <div style={{height: '100vh', width: '100vw', position: 'relative', overflow: 'hidden'}}>
-            {/* Full-page canvas */}
             <WhiteboardCanvas />
 
-            {/* Top-right control panel: start/stop, peer id, input + connect */}
             <div style={{position: 'fixed', top: 12, right: 12, zIndex: 1200, display: 'flex', flexDirection: 'column', gap: 8}}>
                 <div style={{background: 'rgba(15,23,42,0.9)', color: '#fff', padding: 8, borderRadius: 8, display: 'flex', gap: 8, alignItems: 'center'}}>
                     {!peer.started ? (
@@ -119,7 +117,6 @@ export const App: React.FC = () => {
                     </Space>
                 </div>
 
-                {/* Connection list dropdown (optional) */}
                 <div style={{background: 'rgba(255,255,255,0.95)', padding: 8, borderRadius: 8, minWidth: 240}}>
                     {connection.list.length === 0 ? (
                         <div style={{fontSize: 13, color: '#6b7280'}}>Waiting for connection …</div>

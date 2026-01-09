@@ -64,7 +64,6 @@ export const PeerConnection = {
                 conn.on('open', function() {
                     console.log("Connect to: " + id)
                     connectionMap.set(id, conn)
-                    // forward incoming data on this connection to global handler if set
                     conn.on('data', function (receivedData) {
                         if (onAnyDataCallback) onAnyDataCallback(receivedData, id)
                     })
@@ -76,9 +75,6 @@ export const PeerConnection = {
                     reject(err)
                 })
 
-                // When the connection fails due to expiry, the error gets emmitted
-                // to the peer instead of to the connection.
-                // We need to handle this here to be able to fulfill the Promise.
                 const handlePeerError = (err: PeerError<`${PeerErrorType}`>) => {
                     if (err.type === 'peer-unavailable') {
                         const messageSplit = err.message.split(' ')
@@ -96,7 +92,6 @@ export const PeerConnection = {
         peer?.on('connection', function (conn) {
             console.log("Incoming connection: " + conn.peer)
             connectionMap.set(conn.peer, conn)
-            // forward incoming data on this connection to global handler if set
             conn.on('data', function (receivedData) {
                 if (onAnyDataCallback) onAnyDataCallback(receivedData, conn.peer)
             })

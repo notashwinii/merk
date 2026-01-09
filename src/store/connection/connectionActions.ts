@@ -38,9 +38,7 @@ export const connectPeer: (id: string) => (dispatch: Dispatch) => Promise<void>
                 download(file.file || '', file.fileName || "fileName", file.fileType)
             }
         })
-        // NOTE: snapshot sending is handled by the incoming-connection handler on the acceptor side
         dispatch(addConnectionList(id))
-        // request a snapshot from the peer we just connected to (helps avoid race where acceptor sent before we're ready)
         try {
             PeerConnection.sendConnection(id, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT_REQUEST' }) })
         } catch (e) {
