@@ -24,10 +24,16 @@ export const WhiteboardCanvas: React.FC = () => {
   const handleAdd = async () => {
     const id = makeId()
     const op = { opId: 'op-' + id, actor: 'me', ts: Date.now(), type: 'ENTITY_CREATE', payload: { id, x: 50 + Math.random()*200, y: 50 + Math.random()*200, label: 'Entity' } }
-    // build node and broadcast
-    const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
-    // apply locally
-    try { const adapter = adapterRef.current; if (adapter) { await adapter.broadcastRoot(undefined, node) } } catch (e) { console.warn(e) }
+    // build node and broadcast via adapter helper (ensures IR links to heads)
+    try {
+      const adapter = adapterRef.current
+      if (adapter && typeof adapter.createAndBroadcast === 'function') {
+        await adapter.createAndBroadcast(undefined, [op], 'me')
+      } else if (adapter) {
+        const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
+        await adapter.broadcastRoot(undefined, node)
+      }
+    } catch (e) { console.warn(e) }
     // also apply locally via whiteboard module (bootstrap wires adapter->walker to apply for incoming)
   }
 
@@ -47,9 +53,15 @@ export const WhiteboardCanvas: React.FC = () => {
     const y = e.clientY - (cur.offsetY || 0)
     // optimistic local update via sending move op as node
     const op = { opId: 'op-' + id + '-' + Date.now(), actor: 'me', ts: Date.now(), type: 'ENTITY_MOVE', payload: { id, x, y } }
-    const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
     const adapter = adapterRef.current
-    if (adapter) adapter.broadcastRoot(undefined, node)
+    if (adapter) {
+      if (typeof adapter.createAndBroadcast === 'function') {
+        adapter.createAndBroadcast(undefined, [op], 'me')
+      } else {
+        const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
+        adapter.broadcastRoot(undefined, node)
+      }
+    }
   }
 
   const onMouseUp = (e: MouseEvent) => {
