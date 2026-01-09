@@ -7,6 +7,10 @@ type Entity = {
 
 const state: { entities: Record<string, Entity> } = { entities: {} }
 
+// undo/redo stacks: store snapshots of entities
+const undoStack: Array<Record<string, Entity>> = []
+const redoStack: Array<Record<string, Entity>> = []
+
 type Listener = (s: typeof state) => void
 const listeners: Listener[] = []
 
@@ -16,6 +20,14 @@ function emit() { for (const l of listeners) l(state) }
 
 export async function applyOp(op: any) {
   // simple op applier for POC
+  // push pre-op snapshot for undo
+  try {
+    undoStack.push(JSON.parse(JSON.stringify(state.entities)))
+    // clear redo on new op
+    redoStack.length = 0
+  } catch (e) {
+    // ignore
+  }
   const t = op.type
   if (t === 'ENTITY_CREATE') {
     const e = op.payload
@@ -32,11 +44,34 @@ export async function applyOp(op: any) {
   }
 }
 
+export function undo() {
+  if (undoStack.length === 0) return false
+  const snapshot = undoStack.pop() as Record<string, Entity>
+  // push current to redo
+  redoStack.push(JSON.parse(JSON.stringify(state.entities)))
+  state.entities = JSON.parse(JSON.stringify(snapshot))
+  emit()
+  return true
+}
+
+export function redo() {
+  if (redoStack.length === 0) return false
+  const snapshot = redoStack.pop() as Record<string, Entity>
+  // push current to undo
+  undoStack.push(JSON.parse(JSON.stringify(state.entities)))
+  state.entities = JSON.parse(JSON.stringify(snapshot))
+  emit()
+  return true
+}
+
 export function getState() { return state }
 
 export function applySnapshot(snapshot: { entities: Record<string, Entity> }) {
   // replace in-memory state with snapshot
   state.entities = { ...snapshot.entities }
+  // clear undo/redo when snapshot applied (fresh join)
+  undoStack.length = 0
+  redoStack.length = 0
   // notify listeners
   emit()
 }

@@ -1,6 +1,8 @@
 import React, {useEffect, useState, useRef, useCallback} from 'react'
 import { initMerle } from '../helpers/merkle/bootstrap'
 import { subscribe as subscribeWB, getState } from '../helpers/whiteboard'
+import { undo, redo } from '../helpers/whiteboard'
+import { message, Tooltip } from 'antd'
 
 function makeId() { return 'id-' + Math.random().toString(36).slice(2,9) }
 
@@ -56,7 +58,7 @@ export const WhiteboardCanvas: React.FC = () => {
         const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
         await adapter.broadcastRoot(undefined, node)
       }
-    } catch (e) { console.warn(e) }
+    } catch (e) { console.warn(e); message.error('Failed to add entity') }
   }
 
   const onNodePointerDown = (e: React.PointerEvent, ent: Entity) => {
@@ -82,6 +84,10 @@ export const WhiteboardCanvas: React.FC = () => {
           adapter.broadcastRoot(undefined, node)
         }
       }
+      // show lightweight feedback
+      message.destroy()
+      message.success('Moved')
+      return
     }
 
     // panning
@@ -103,6 +109,24 @@ export const WhiteboardCanvas: React.FC = () => {
       p.dragging = false
     }
   }
+
+  // keyboard shortcuts: A = add, Ctrl+Z = undo, Ctrl+Y or Ctrl+Shift+Z = redo, 0 = reset zoom
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'a' || e.key === 'A') {
+        handleAdd()
+      }
+      const ctrl = e.ctrlKey || e.metaKey
+      if (ctrl && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) { redo(); message.info('Redo') }
+        else { undo(); message.info('Undo') }
+      }
+      if (ctrl && e.key.toLowerCase() === 'y') { redo(); message.info('Redo') }
+      if (e.key === '0') { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleAdd])
 
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
     // start panning when middle button or space key pressed
@@ -130,10 +154,12 @@ export const WhiteboardCanvas: React.FC = () => {
 
   return (
     <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-      <div style={{display: 'flex', alignItems: 'center', padding: '8px 12px', background: '#0f172a', color: '#fff'}}>
-        <h3 style={{margin: 0, marginRight: 12}}>P2P Whiteboard</h3>
-        <button onClick={handleAdd} style={{padding: '6px 10px', borderRadius: 6, border: 'none', background: '#06b6d4', color: '#042c3c', cursor: 'pointer'}}>Add entity</button>
-        <div style={{marginLeft: 12, color: '#9ca3af'}}>Drag nodes to move. Shift-drag or middle-drag to pan. Scroll to zoom.</div>
+      {/* small toolbar (top-left) for common actions */}
+      <div style={{position: 'absolute', left: 12, top: 12, zIndex: 1100, display: 'flex', gap: 8}}>
+        <Tooltip title="Undo (Ctrl+Z)"><button onClick={() => { undo(); message.info('Undo') }} style={{padding: 8, borderRadius: 6}}>Undo</button></Tooltip>
+        <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: 8, borderRadius: 6}}>Redo</button></Tooltip>
+        <Tooltip title="Add entity (A)"><button onClick={handleAdd} style={{padding: 8, borderRadius: 6, background: '#06b6d4', color: '#042c3c'}}>Add</button></Tooltip>
+        <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: 8, borderRadius: 6}}>Reset</button></Tooltip>
       </div>
       <div style={{flex: 1, position: 'relative', background: 'linear-gradient(45deg,#f8fafc 25%, transparent 25%), linear-gradient(-45deg,#f8fafc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f8fafc 75%), linear-gradient(-45deg, transparent 75%, #f8fafc 75%)', backgroundSize: '40px 40px', backgroundPosition: '0 0, 0 20px, 20px -20px, -20px 0px'}}>
         <svg ref={svgRef} width="100%" height="100%" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel as any} onPointerDown={onBackgroundPointerDown} style={{touchAction: 'none'}}>
