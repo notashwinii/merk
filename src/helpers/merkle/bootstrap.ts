@@ -2,7 +2,7 @@ import { createMerleAdapter } from './adapter'
 import { createWalker } from './walker'
 import * as dagStore from './dagStore'
 import { PeerConnection, DataType } from '../peer'
-import { applyOp, subscribe as subscribeWB } from '../whiteboard'
+import { applyOp, subscribe as subscribeWB, applySnapshot } from '../whiteboard'
 
 let adapter: any = null
 let walker: any = null
@@ -29,6 +29,11 @@ export function initMerle() {
     try {
       if (!data || !data.message) return
       const parsed = JSON.parse(data.message)
+      // handle snapshot messages
+      if (parsed && parsed.type === 'WB_SNAPSHOT' && parsed.state) {
+        try { applySnapshot(parsed.state) } catch (e) { console.warn('applySnapshot error', e) }
+        return
+      }
       // forward merkle messages to adapter
       if (parsed && parsed.type && ['MERKLE_ROOT','GET_NODE','NODE_RESPONSE'].includes(parsed.type)) {
         adapter.onIncomingMessage(parsed, from)
