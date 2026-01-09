@@ -64,6 +64,8 @@ export const WhiteboardCanvas: React.FC = () => {
   const onNodePointerDown = (e: React.PointerEvent, ent: Entity) => {
     (e.target as Element).setPointerCapture(e.pointerId)
     dragRef.current = { id: ent.id, startMouseX: e.clientX, startMouseY: e.clientY, startX: ent.x, startY: ent.y }
+    // show a single moving indicator (use a fixed key so it updates instead of stacking)
+    try { message.open({ content: 'Moving...', key: 'wb_move', duration: 0 }) } catch (e) { /* ignore */ }
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -84,9 +86,7 @@ export const WhiteboardCanvas: React.FC = () => {
           adapter.broadcastRoot(undefined, node)
         }
       }
-      // show lightweight feedback
-      message.destroy()
-      message.success('Moved')
+      // lightweight feedback handled on pointer up to avoid flooding
       return
     }
 
@@ -103,6 +103,8 @@ export const WhiteboardCanvas: React.FC = () => {
     const d = dragRef.current
     if (d && d.id) {
       dragRef.current = {}
+      // finalize moving feedback
+      try { message.success({ content: 'Moved', key: 'wb_move', duration: 1.2 }) } catch (err) { /* ignore */ }
     }
     const p = panRef.current
     if (p && p.dragging) {
