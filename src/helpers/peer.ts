@@ -16,6 +16,7 @@ export interface Data {
 
 let peer: Peer | undefined
 let connectionMap: Map<string, DataConnection> = new Map<string, DataConnection>()
+let onAnyDataCallback: ((data: any, from: string) => void) | null = null
 
 export const PeerConnection = {
     getPeer: () => peer,
@@ -63,6 +64,10 @@ export const PeerConnection = {
                 conn.on('open', function() {
                     console.log("Connect to: " + id)
                     connectionMap.set(id, conn)
+                    // forward incoming data on this connection to global handler if set
+                    conn.on('data', function (receivedData) {
+                        if (onAnyDataCallback) onAnyDataCallback(receivedData, id)
+                    })
                     peer?.removeListener('error', handlePeerError)
                     resolve()
                 }).on('error', function(err) {
@@ -91,6 +96,10 @@ export const PeerConnection = {
         peer?.on('connection', function (conn) {
             console.log("Incoming connection: " + conn.peer)
             connectionMap.set(conn.peer, conn)
+            // forward incoming data on this connection to global handler if set
+            conn.on('data', function (receivedData) {
+                if (onAnyDataCallback) onAnyDataCallback(receivedData, conn.peer)
+            })
             callback(conn)
         });
     },
@@ -124,6 +133,18 @@ export const PeerConnection = {
         }
         resolve()
     }),
+    broadcastAll: (data: Data) => {
+        connectionMap.forEach((conn, id) => {
+            try {
+                conn.send(data)
+            } catch (e) {
+                console.warn('broadcastAll send error', e)
+            }
+        })
+    },
+    setOnAnyData: (cb: (data: any, from: string) => void) => {
+        onAnyDataCallback = cb
+    },
     onConnectionReceiveData: (id: string, callback: (f: Data) => void) => {
         if (!peer) {
             throw new Error("Peer doesn't start yet")
