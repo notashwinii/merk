@@ -5,6 +5,7 @@ import {useAppDispatch, useAppSelector} from "./store/hooks";
 import {startPeer, stopPeerSession} from "./store/peer/peerActions";
 import * as connectionAction from "./store/connection/connectionActions"
 import {DataType, PeerConnection} from "./helpers/peer";
+import WhiteboardCanvas from "./components/WhiteboardCanvas";
 import {useAsyncState} from "./helpers/hooks";
 
 const {Title} = Typography
@@ -96,6 +97,9 @@ export const App: React.FC = () => {
                             </Space>
                         </Card>
                         <div hidden={!peer.started}>
+                            <Card title="Whiteboard">
+                                <WhiteboardCanvas />
+                            </Card>
                             <Card>
                                 <Space direction="horizontal">
                                     <Input placeholder={"ID"}
