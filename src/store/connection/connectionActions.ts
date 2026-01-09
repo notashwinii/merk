@@ -3,6 +3,7 @@ import {Dispatch} from "redux";
 import {DataType, PeerConnection} from "../../helpers/peer";
 import {message} from "antd";
 import download from "js-file-download";
+import { getState as getWBState } from '../../helpers/whiteboard'
 
 export const changeConnectionInput = (id: string) => ({
     type: ConnectionActionType.CONNECTION_INPUT_CHANGE, id
@@ -38,6 +39,13 @@ export const connectPeer: (id: string) => (dispatch: Dispatch) => Promise<void>
                 download(file.file || '', file.fileName || "fileName", file.fileType)
             }
         })
+        // send current whiteboard snapshot to the connected peer so they receive existing entities
+        try {
+            const wbState = getWBState()
+            await PeerConnection.sendConnection(id, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) })
+        } catch (e) {
+            console.warn('send snapshot error', e)
+        }
         dispatch(addConnectionList(id))
         dispatch(setLoading(false))
     } catch (err) {

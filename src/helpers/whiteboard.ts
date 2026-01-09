@@ -33,3 +33,10 @@ export async function applyOp(op: any) {
 }
 
 export function getState() { return state }
+
+export function applySnapshot(snapshot: { entities: Record<string, Entity> }) {
+  // replace in-memory state with snapshot
+  state.entities = { ...snapshot.entities }
+  // notify listeners
+  emit()
+}
