@@ -34,13 +34,14 @@ export function initMerle() {
       }
       if (parsed && parsed.type === 'WB_SNAPSHOT_REQUEST') {
         try {
+          // Always send the full whiteboard state as a WB_SNAPSHOT JSON message to the requester.
+          // This ensures new peers receive the latest entity labels, attributes, and relations
+          // regardless of the underlying adapter/merkle sync state.
           const wbState = getWBState()
-          const ops = Object.values(wbState.entities).map((e: any) => ({ opId: `snapshot-${e.id}`, actor: 'snapshot', ts: Date.now(), type: 'ENTITY_CREATE', payload: e }))
-          const node = { links: [], payload: ops, meta: { author: 'snapshot', ts: Date.now() } }
-          if (adapter && adapter.sendRootToPeer) {
-            try { adapter.sendRootToPeer(from, undefined, node) } catch (e) { console.warn('sendRootToPeer error', e) }
-          } else {
-            try { PeerConnection.sendConnection(from, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) }) } catch (e) { console.warn('send snapshot error', e) }
+          try {
+            PeerConnection.sendConnection(from, { dataType: DataType.OTHER, message: JSON.stringify({ type: 'WB_SNAPSHOT', state: wbState }) })
+          } catch (e) {
+            console.warn('send snapshot error', e)
           }
         } catch (e) {
           console.warn('WB_SNAPSHOT_REQUEST handling error', e)

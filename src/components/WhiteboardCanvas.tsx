@@ -2,11 +2,10 @@ import React, {useEffect, useState, useRef, useCallback} from 'react'
 import { initMerle } from '../helpers/merkle/bootstrap'
 import { subscribe as subscribeWB, getState } from '../helpers/whiteboard'
 import { undo, redo } from '../helpers/whiteboard'
+import type { Entity } from '../helpers/whiteboard'
 import { message, Tooltip } from 'antd'
 
 function makeId() { return 'id-' + Math.random().toString(36).slice(2,9) }
-
-type Entity = { id: string, x: number, y: number, label: string }
 
 export const WhiteboardCanvas: React.FC = () => {
   const [state, setState] = useState(getState())
@@ -14,6 +13,8 @@ export const WhiteboardCanvas: React.FC = () => {
 
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [addAttrMode, setAddAttrMode] = useState<boolean>(false)
 
   const dragRef = useRef<{ id?: string, startMouseX?: number, startMouseY?: number, startX?: number, startY?: number }>({})
   const panRef = useRef<{ dragging?: boolean, startX?: number, startY?: number, startPanX?: number, startPanY?: number }>({})
@@ -74,28 +75,49 @@ export const WhiteboardCanvas: React.FC = () => {
   }
 
   const onEntityClick = (ent: Entity) => {
-    if (!connectMode.current) return
-    if (!connectSource.current) {
-      connectSource.current = ent.id
-      message.info('Source selected: ' + ent.id + '. Now click target.')
+    // priority: add-attribute mode, then connect mode, else selection
+    if (addAttrMode) {
+      const name = window.prompt('Attribute name')
+      if (!name) { setAddAttrMode(false); return }
+      const type = window.prompt('Attribute type (optional)') || undefined
+      const attrId = 'a-' + Math.random().toString(36).slice(2,9)
+      const attr = { id: attrId, name, type, isPrimary: false, isNullable: true }
+      const op = { opId: `op-add-attr-${attrId}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_ADD_ATTRIBUTE', payload: { id: ent.id, attr } }
+      const adapter = adapterRef.current
+      if (adapter && typeof adapter.createAndBroadcast === 'function') adapter.createAndBroadcast(undefined, [op], 'me')
+      else if (adapter) adapter.broadcastRoot(undefined, { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } })
+      setAddAttrMode(false)
+      message.success('Attribute added')
       return
     }
-    const source = connectSource.current
-    const target = ent.id
-    if (source === target) { message.warning('Cannot connect entity to itself'); connectSource.current = null; return }
-    const rid = 'rel-' + Math.random().toString(36).slice(2,9)
-    const rel = { id: rid, source, target, label: '', cardinality: '1:N' }
-    const op = { opId: 'op-' + rid + '-' + Date.now(), actor: 'me', ts: Date.now(), type: 'RELATION_CREATE', payload: rel }
-    const adapter = adapterRef.current
-    if (adapter && typeof adapter.createAndBroadcast === 'function') {
-      adapter.createAndBroadcast(undefined, [op], 'me')
-    } else if (adapter) {
-      const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
-      adapter.broadcastRoot(undefined, node)
+
+    if (connectMode.current) {
+      if (!connectSource.current) {
+        connectSource.current = ent.id
+        message.info('Source selected: ' + ent.id + '. Now click target.')
+        return
+      }
+      const source = connectSource.current
+      const target = ent.id
+      if (source === target) { message.warning('Cannot connect entity to itself'); connectSource.current = null; return }
+      const rid = 'rel-' + Math.random().toString(36).slice(2,9)
+      const rel = { id: rid, source, target, label: '', cardinality: { source: '1', target: 'N' } }
+      const op = { opId: 'op-' + rid + '-' + Date.now(), actor: 'me', ts: Date.now(), type: 'RELATION_CREATE', payload: rel }
+      const adapter = adapterRef.current
+      if (adapter && typeof adapter.createAndBroadcast === 'function') {
+        adapter.createAndBroadcast(undefined, [op], 'me')
+      } else if (adapter) {
+        const node = { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }
+        adapter.broadcastRoot(undefined, node)
+      }
+      connectSource.current = null
+      connectMode.current = false
+      message.success('Relation created')
+      return
     }
-    connectSource.current = null
-    connectMode.current = false
-    message.success('Relation created')
+
+    // normal click selects entity
+    setSelected(ent.id)
   }
 
   const onEntityDoubleClick = (ent: Entity) => {
@@ -164,6 +186,16 @@ export const WhiteboardCanvas: React.FC = () => {
       }
       if (ctrl && e.key.toLowerCase() === 'y') { redo(); message.info('Redo') }
       if (e.key === '0') { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selected) {
+          const op = { opId: `op-del-${selected}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_DELETE', payload: { id: selected } }
+          const adapter = adapterRef.current
+          if (adapter && typeof adapter.createAndBroadcast === 'function') adapter.createAndBroadcast(undefined, [op], 'me')
+          else if (adapter) adapter.broadcastRoot(undefined, { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } })
+          setSelected(null)
+          message.success('Entity deleted')
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -197,8 +229,9 @@ export const WhiteboardCanvas: React.FC = () => {
         <Tooltip title="Undo (Ctrl+Z)"><button onClick={() => { undo(); message.info('Undo') }} style={{padding: 8, borderRadius: 6}}>Undo</button></Tooltip>
         <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: 8, borderRadius: 6}}>Redo</button></Tooltip>
         <Tooltip title="Add entity (A)"><button onClick={handleAdd} style={{padding: 8, borderRadius: 6, background: '#06b6d4', color: '#042c3c'}}>Add</button></Tooltip>
-        <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: 8, borderRadius: 6}}>Reset</button></Tooltip>
-        <Tooltip title="Connect entities"><button onClick={toggleConnectMode} style={{padding: 8, borderRadius: 6, background: connectMode.current ? '#fde68a' : undefined}}>Connect</button></Tooltip>
+  <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: 8, borderRadius: 6}}>Reset</button></Tooltip>
+  <Tooltip title={addAttrMode ? "Click an entity to add attribute (active)" : "Add attribute to entity"}><button onClick={() => { setAddAttrMode(v => !v); if (!addAttrMode) message.info('Add-attribute mode: click an entity'); else message.info('Add-attribute mode off') }} style={{padding: 8, borderRadius: 6, background: addAttrMode ? '#fde68a' : undefined}}>Add Attr</button></Tooltip>
+  <Tooltip title="Connect entities"><button onClick={toggleConnectMode} style={{padding: 8, borderRadius: 6, background: connectMode.current ? '#fde68a' : undefined}}>Connect</button></Tooltip>
       </div>
       <div style={{flex: 1, position: 'relative', background: 'linear-gradient(45deg,#f8fafc 25%, transparent 25%), linear-gradient(-45deg,#f8fafc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f8fafc 75%), linear-gradient(-45deg, transparent 75%, #f8fafc 75%)', backgroundSize: '40px 40px', backgroundPosition: '0 0, 0 20px, 20px -20px, -20px 0px'}}>
         <svg ref={svgRef} width="100%" height="100%" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel as any} onPointerDown={onBackgroundPointerDown} style={{touchAction: 'none'}}>
@@ -213,20 +246,51 @@ export const WhiteboardCanvas: React.FC = () => {
               const t = (state as any).entities[r.target]
               if (!s || !t) return null
               const x1 = s.x, y1 = s.y, x2 = t.x, y2 = t.y
+              const mx = (x1 + x2) / 2
+              const my = (y1 + y2) / 2
+              // cardinality labels
+              const cs = r.cardinality ? (r.cardinality.source || '') : ''
+              const ct = r.cardinality ? (r.cardinality.target || '') : ''
               return (
                 <g key={r.id}>
                   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#334155" strokeWidth={2} markerEnd="url(#arrow)" />
-                  {(r.label || '').length > 0 && <text x={(x1 + x2)/2} y={(y1 + y2)/2 - 6} fontSize={12} textAnchor="middle" fill="#374151">{r.label}</text>}
+                  {(r.label || '').length > 0 && <text x={mx} y={my - 6} fontSize={12} textAnchor="middle" fill="#374151">{r.label}</text>}
+                  {cs.length > 0 && <text x={x1 + (mx - x1) * 0.2} y={y1 + (my - y1) * 0.2 - 6} fontSize={11} textAnchor="middle" fill="#0f172a">{cs}</text>}
+                  {ct.length > 0 && <text x={x2 + (mx - x2) * 0.2} y={y2 + (my - y2) * 0.2 - 6} fontSize={11} textAnchor="middle" fill="#0f172a">{ct}</text>}
                 </g>
               )
             })}
 
-            {entities.map((e) => (
-              <g key={e.id} transform={`translate(${e.x},${e.y})`}>
-                <rect x={-60} y={-20} rx={8} ry={8} width={120} height={40} fill="#ffffff" stroke="#0f172a" strokeWidth={1} style={{filter: 'drop-shadow(0 2px 6px rgba(2,6,23,0.12))', cursor: 'grab'}} onPointerDown={(ev) => onNodePointerDown(ev, e)} onClick={() => onEntityClick(e)} onDoubleClick={() => onEntityDoubleClick(e)} />
-                <text x={0} y={6} fontSize={12} fontFamily='Arial' textAnchor='middle' fill='#0f172a'>{e.label}</text>
-              </g>
-            ))}
+            {entities.map((e) => {
+              const attrs = ((state as any).entities || {})[e.id]?.attributes || []
+              const attrCount = attrs.length
+              const baseW = e.width || 140
+              const baseH = e.height || 40
+              const height = baseH + Math.max(0, attrCount) * 18
+              const rectX = -baseW / 2
+              const rectY = -height / 2
+              const isSelected = selected === e.id
+              return (
+                <g key={e.id} transform={`translate(${e.x},${e.y})`}>
+                  <rect x={rectX} y={rectY} rx={8} ry={8} width={baseW} height={height} fill={isSelected ? '#f8fafc' : '#ffffff'} stroke={isSelected ? '#0ea5a3' : '#0f172a'} strokeWidth={isSelected ? 2 : 1} style={{filter: 'drop-shadow(0 2px 6px rgba(2,6,23,0.08))', cursor: 'grab'}} onPointerDown={(ev) => onNodePointerDown(ev, e)} onClick={() => onEntityClick(e)} onDoubleClick={() => onEntityDoubleClick(e)} />
+                  <text x={0} y={rectY + 18} fontSize={12} fontFamily='Arial' textAnchor='middle' fill='#0f172a' fontWeight='600'>{e.label}</text>
+                  {attrs.map((a: any, i: number) => (
+                    <g key={a.id} transform={`translate(${-baseW/2 + 8}, ${rectY + 32 + i*18})`}>
+                      <text
+                        x={0}
+                        y={0}
+                        fontSize={12}
+                        fontFamily='Arial'
+                        textAnchor='start'
+                        fill='#0f172a'
+                        style={{textDecoration: a.isPrimary ? 'underline' : 'none', cursor: 'pointer'}}
+                        onClick={(ev) => { ev.stopPropagation(); const op = { opId: `op-togglepk-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_TOGGLE_PK', payload: { id: e.id, attrId: a.id } }; const adapter = adapterRef.current; if (adapter && typeof adapter.createAndBroadcast === 'function') adapter.createAndBroadcast(undefined, [op], 'me'); else if (adapter) adapter.broadcastRoot(undefined, { links: [], payload: [op], meta: { author: 'me', ts: Date.now() } }); }}
+                      >{a.name}{a.type ? `: ${a.type}` : ''}</text>
+                    </g>
+                  ))}
+                </g>
+              )
+            })}
           </g>
         </svg>
       </div>
