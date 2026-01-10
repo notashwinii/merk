@@ -80,8 +80,12 @@ export const App: React.FC = () => {
 
     if (!peer.started) {
         return (
-            <div style={{height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                <Button size="large" type="primary" onClick={handleStartSession} loading={peer.loading}>Start</Button>
+            <div style={{height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff'}}>
+                <div style={{textAlign: 'center'}}>
+                    <h1 style={{fontSize: 64, margin: 0, fontWeight: 800, color: '#000'}}>Merk - ER Diagram Whiteboard</h1>
+                    <div style={{height: 24}} />
+                    <Button size="large" type="default" onClick={handleStartSession} loading={peer.loading}>Get started</Button>
+                </div>
             </div>
         )
     }
