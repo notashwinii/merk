@@ -306,6 +306,149 @@ export const WhiteboardCanvas: React.FC = () => {
     }
   }
 
+  // Export current SVG canvas as PNG image
+  const exportAsPng = async () => {
+    const svg = svgRef.current
+    if (!svg) return
+    try {
+      const rect = svg.getBoundingClientRect()
+      const width = Math.max(1, Math.round(rect.width))
+      const height = Math.max(1, Math.round(rect.height))
+
+      // clone svg and inline its styles
+      const clone = svg.cloneNode(true) as SVGSVGElement
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+      clone.setAttribute('width', String(width))
+      clone.setAttribute('height', String(height))
+
+      const serializer = new XMLSerializer()
+      const svgString = serializer.serializeToString(clone)
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) throw new Error('2d context unavailable')
+          // fill background white
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, width, height)
+          ctx.drawImage(img, 0, 0, width, height)
+          canvas.toBlob((b) => {
+            if (!b) return
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(b)
+            a.download = 'whiteboard.png'
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+          })
+        } catch (e) { console.warn('export png failed', e) }
+        URL.revokeObjectURL(url)
+      }
+      img.onerror = (err) => { console.warn('img load error', err); URL.revokeObjectURL(url) }
+      img.src = url
+    } catch (e) { console.warn('exportAsPng error', e) }
+  }
+
+  // Generate SQL DDL for current diagram and download as .sql
+  const exportAsSql = () => {
+    const st: any = getState()
+    const entities = Object.values(st.entities || {}) as any[]
+    const relations = Object.values(st.relations || {}) as any[]
+
+    const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_]/g, '_')
+    const mapType = (t?: string) => {
+      if (!t) return 'TEXT'
+      const tt = t.toLowerCase()
+      if (tt.includes('int')) return 'INTEGER'
+      if (tt.includes('bool')) return 'BOOLEAN'
+      if (tt.includes('char') || tt.includes('text') || tt.includes('string')) return 'TEXT'
+      if (tt.includes('date')) return 'DATE'
+      if (tt.includes('time')) return 'TIMESTAMP'
+      return 'TEXT'
+    }
+
+    // helper to find primary attr name for an entity
+    const getPrimaryAttr = (ent: any) => {
+      const attrs = ent.attributes || []
+      const pk = attrs.find((a: any) => a.isPrimary)
+      return pk ? pk.name : null
+    }
+
+    const statements: string[] = []
+
+    for (const ent of entities) {
+      const table = sanitize(ent.label || ent.id)
+      const cols: string[] = []
+      const pkCols: string[] = []
+      if (!ent.attributes || ent.attributes.length === 0) {
+        cols.push('id SERIAL PRIMARY KEY')
+      } else {
+        for (const a of ent.attributes) {
+          const col = sanitize(a.name || a.id)
+          const type = mapType(a.type)
+          const nullable = a.isNullable === false ? 'NOT NULL' : ''
+          cols.push(`"${col}" ${type} ${nullable}`)
+          if (a.isPrimary) pkCols.push(`"${col}"`)
+        }
+        if (pkCols.length === 0) {
+          cols.unshift('id SERIAL PRIMARY KEY')
+        }
+      }
+      const pkClause = pkCols.length > 0 ? `, PRIMARY KEY (${pkCols.join(', ')})` : ''
+      const stmt = `CREATE TABLE "${table}" (\n  ${cols.join(',\n  ')}${pkClause}\n);`
+      statements.push(stmt)
+    }
+
+    // handle relations: create junction tables for N:M
+    for (const r of relations) {
+      const cardS = r.cardinality?.source || '1'
+      const cardT = r.cardinality?.target || 'N'
+      if (cardS === 'N' && cardT === 'N') {
+        const leftEnt = st.entities[r.source]
+        const rightEnt = st.entities[r.target]
+        const table = sanitize(r.label || `rel_${r.id}`)
+        const leftPk = getPrimaryAttr(leftEnt) || 'id'
+        const rightPk = getPrimaryAttr(rightEnt) || 'id'
+        const leftCol = sanitize(leftEnt.label || leftEnt.id) + '_' + leftPk
+        const rightCol = sanitize(rightEnt.label || rightEnt.id) + '_' + rightPk
+        const stmt = `CREATE TABLE "${table}" (\n  "${leftCol}" INTEGER NOT NULL,\n  "${rightCol}" INTEGER NOT NULL,\n  FOREIGN KEY ("${leftCol}") REFERENCES "${sanitize(leftEnt.label || leftEnt.id)}"("${leftPk}"),\n  FOREIGN KEY ("${rightCol}") REFERENCES "${sanitize(rightEnt.label || rightEnt.id)}"("${rightPk}")\n);`
+        statements.push(stmt)
+      }
+    }
+
+    // add FK constraints from attributes
+    for (const ent of entities) {
+      for (const a of ent.attributes || []) {
+        if (a.isForeign && a.references && a.references.entityId) {
+          const table = sanitize(ent.label || ent.id)
+          const col = sanitize(a.name || a.id)
+          const refEnt = st.entities[a.references.entityId]
+          if (!refEnt) continue
+          const refTable = sanitize(refEnt.label || refEnt.id)
+          const refCol = getPrimaryAttr(refEnt) || 'id'
+          const stmt = `ALTER TABLE "${table}" ADD FOREIGN KEY ("${col}") REFERENCES "${refTable}"("${refCol}");`
+          statements.push(stmt)
+        }
+      }
+    }
+
+    const sql = statements.join('\n\n')
+    const blob = new Blob([sql], { type: 'text/sql' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'whiteboard.sql'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault()
     const delta = -e.deltaY
@@ -333,6 +476,8 @@ export const WhiteboardCanvas: React.FC = () => {
               <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 64, background: '#f3f4f6', border: '1px solid #cbd5e1'}}>Redo</button></Tooltip>
               <Tooltip title="Add entity"><button onClick={handleAdd} style={{padding: '6px 12px', borderRadius: 6, minWidth: 64, background: '#06b6d4', color: '#042c3c', border: 'none'}}>Add</button></Tooltip>
               <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 64, background: '#f3f4f6', border: '1px solid #cbd5e1'}}>Reset</button></Tooltip>
+              <Tooltip title="Export PNG"><button onClick={async () => { await exportAsPng() }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 80, background: '#111827', color: '#ffffff', border: 'none'}}>Export PNG</button></Tooltip>
+              <Tooltip title="Export SQL"><button onClick={() => { exportAsSql() }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 80, background: '#10b981', color: '#042c3c', border: 'none'}}>Export SQL</button></Tooltip>
             </div>
             <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
               <Tooltip title={addAttrMode ? "Click an entity to add attribute (active)" : "Add attribute to entity"}><button onClick={() => { setAddAttrMode(v => !v); if (!addAttrMode) message.info('Add-attribute mode: click an entity'); else message.info('Add-attribute mode off') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 88, background: addAttrMode ? '#fde68a' : '#f3f4f6', border: '1px solid #cbd5e1'}}>Add Attr</button></Tooltip>
