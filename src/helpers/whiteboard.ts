@@ -5,6 +5,8 @@ export type Attribute = {
   type?: string
   isPrimary?: boolean
   isNullable?: boolean
+  isForeign?: boolean
+  references?: { entityId: string, attrId?: string }
 }
 
 export type Entity = {
