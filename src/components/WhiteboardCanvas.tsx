@@ -22,6 +22,7 @@ export const WhiteboardCanvas: React.FC = () => {
   const [propAttrName, setPropAttrName] = useState<string>('')
   const [propAttrType, setPropAttrType] = useState<string>('')
   const [propRelCard, setPropRelCard] = useState<string>('1:N')
+  const [propRelCreateFk, setPropRelCreateFk] = useState<boolean>(false)
 
   const dragRef = useRef<{ id?: string, startMouseX?: number, startMouseY?: number, startX?: number, startY?: number }>({})
   const panRef = useRef<{ dragging?: boolean, startX?: number, startY?: number, startPanX?: number, startPanY?: number }>({})
@@ -214,14 +215,32 @@ export const WhiteboardCanvas: React.FC = () => {
     const [src, trg] = propRelCard.split(':')
     const op = { opId: `op-rel-update-${id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'RELATION_UPDATE', payload: { id, label: propLabel, cardinality: { source: src, target: trg } } }
     sendOps([op])
+    // Optionally create a foreign key attribute on the N-side that references the 1-side
+    try {
+      const rel: any = (state as any).relations[id]
+      if (propRelCreateFk && rel) {
+        // determine which side is N (many). If both N (N:M), skip auto FK creation.
+        const card = { source: src, target: trg }
+        let fkTargetEntityId: string | null = null
+        let refEntityId: string | null = null
+        if (card.source === 'N' && card.target === '1') { fkTargetEntityId = rel.source; refEntityId = rel.target }
+        else if (card.source === '1' && card.target === 'N') { fkTargetEntityId = rel.target; refEntityId = rel.source }
+        if (fkTargetEntityId && refEntityId) {
+          const fkId = `fk-${refEntityId}-${Date.now()}`
+          const fkName = `fk_${refEntityId}`
+          const fkAttr = { id: fkId, name: fkName, type: 'string', isPrimary: false, isNullable: true, isForeign: true, references: { entityId: refEntityId } }
+          const fkOp = { opId: `op-add-attr-${fkId}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_ADD_ATTRIBUTE', payload: { id: fkTargetEntityId, attr: fkAttr } }
+          // send both relation update and fk add
+          sendOps([fkOp])
+        }
+      }
+    } catch (e) { console.warn('FK create failed', e) }
     message.success('Relation updated')
   }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'a' || e.key === 'A') {
-        handleAdd()
-      }
+      // removed: create-entity shortcut (A) per UX request
       const ctrl = e.ctrlKey || e.metaKey
       if (ctrl && e.key.toLowerCase() === 'z') {
         if (e.shiftKey) { redo(); message.info('Redo') }
@@ -251,6 +270,35 @@ export const WhiteboardCanvas: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey)
   }, [handleAdd])
 
+  // Sync the properties panel fields when selection or state changes
+  useEffect(() => {
+    if (!selected) {
+      setPropLabel('')
+      setPropAttrName('')
+      setPropAttrType('')
+      setPropRelCard('1:N')
+      return
+    }
+    if (selected.startsWith('entity:')) {
+      const id = selected.split(':')[1]
+      const ent: any = (state as any).entities[id]
+      if (ent) {
+        setPropLabel(ent.label || '')
+        setPropAttrName('')
+        setPropAttrType('')
+        setPropRelCreateFk(false)
+      }
+    } else if (selected.startsWith('relation:')) {
+      const id = selected.split(':')[1]
+      const rel: any = (state as any).relations[id]
+      if (rel) {
+        setPropLabel(rel.label || '')
+        setPropRelCard((rel.cardinality && `${rel.cardinality.source}:${rel.cardinality.target}`) || '1:N')
+        setPropRelCreateFk(false)
+      }
+    }
+  }, [selected, state])
+
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
     const isPan = e.button === 1 || (e as any).buttons === 4 || (e as any).shiftKey
     if (isPan) {
@@ -277,37 +325,37 @@ export const WhiteboardCanvas: React.FC = () => {
     <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
       <div style={{flex: 1, position: 'relative', display: 'flex'}}>
         {/* Properties panel (left) */}
-        <div style={{width: 320, borderRight: '1px solid #e6e6e6', background: '#fff', padding: 12}}>
-          <h3 style={{marginTop: 4, marginBottom: 8}}>Properties</h3>
+        <div style={{width: 320, boxSizing: 'border-box', borderRight: '1px solid #e6e6e6', background: '#ffffff', padding: 12, height: '100%', overflowY: 'auto'}}>
+          <h3 style={{marginTop: 2, marginBottom: 10, fontSize: 18}}>Properties</h3>
             {/* Toolbar inside left panel */}
-            <div style={{display: 'flex', gap: 8, marginBottom: 10}}>
-              <Tooltip title="Undo (Ctrl+Z)"><button onClick={() => { undo(); message.info('Undo') }} style={{padding: 8, borderRadius: 6}}>Undo</button></Tooltip>
-              <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: 8, borderRadius: 6}}>Redo</button></Tooltip>
-              <Tooltip title="Add entity (A)"><button onClick={handleAdd} style={{padding: 8, borderRadius: 6, background: '#06b6d4', color: '#042c3c'}}>Add</button></Tooltip>
-              <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: 8, borderRadius: 6}}>Reset</button></Tooltip>
+            <div style={{display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap'}}>
+              <Tooltip title="Undo (Ctrl+Z)"><button onClick={() => { undo(); message.info('Undo') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 64, background: '#f3f4f6', border: '1px solid #cbd5e1'}}>Undo</button></Tooltip>
+              <Tooltip title="Redo (Ctrl+Y)"><button onClick={() => { redo(); message.info('Redo') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 64, background: '#f3f4f6', border: '1px solid #cbd5e1'}}>Redo</button></Tooltip>
+              <Tooltip title="Add entity"><button onClick={handleAdd} style={{padding: '6px 12px', borderRadius: 6, minWidth: 64, background: '#06b6d4', color: '#042c3c', border: 'none'}}>Add</button></Tooltip>
+              <Tooltip title="Reset zoom (0)"><button onClick={() => { setScale(1); setPan({ x: 0, y: 0 }); message.info('Reset zoom') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 64, background: '#f3f4f6', border: '1px solid #cbd5e1'}}>Reset</button></Tooltip>
             </div>
-            <div style={{display: 'flex', gap: 8, marginBottom: 8}}>
-              <Tooltip title={addAttrMode ? "Click an entity to add attribute (active)" : "Add attribute to entity"}><button onClick={() => { setAddAttrMode(v => !v); if (!addAttrMode) message.info('Add-attribute mode: click an entity'); else message.info('Add-attribute mode off') }} style={{padding: 8, borderRadius: 6, background: addAttrMode ? '#fde68a' : undefined}}>Add Attr</button></Tooltip>
-              <Tooltip title="Connect entities"><button onClick={toggleConnectMode} style={{padding: 8, borderRadius: 6, background: connectMode.current ? '#fde68a' : undefined}}>Connect</button></Tooltip>
+            <div style={{display: 'flex', gap: 8, marginBottom: 12}}>
+              <Tooltip title={addAttrMode ? "Click an entity to add attribute (active)" : "Add attribute to entity"}><button onClick={() => { setAddAttrMode(v => !v); if (!addAttrMode) message.info('Add-attribute mode: click an entity'); else message.info('Add-attribute mode off') }} style={{padding: '6px 10px', borderRadius: 6, minWidth: 88, background: addAttrMode ? '#fde68a' : '#f3f4f6', border: '1px solid #cbd5e1'}}>Add Attr</button></Tooltip>
+              <Tooltip title="Connect entities"><button onClick={toggleConnectMode} style={{padding: '6px 10px', borderRadius: 6, minWidth: 88, background: connectMode.current ? '#fde68a' : '#f3f4f6', border: '1px solid #cbd5e1'}}>Connect</button></Tooltip>
             </div>
 
-            {!selected && <div style={{color: '#6b7280'}}>Select an entity or relation to edit</div>}
+            {!selected && <div style={{color: '#6b7280', marginBottom: 8}}>Select an entity or relation to edit</div>}
           {selected && selected.startsWith('entity:') && (() => {
             const id = selected.split(':')[1]
             const ent: any = (state as any).entities[id]
             if (!ent) return <div>Entity not found</div>
             return (
               <div>
-                <div style={{marginBottom: 8}}><strong>Entity</strong> — {ent.id}</div>
-                <label style={{display: 'block', fontSize: 12, color: '#374151'}}>Label</label>
-                <input value={propLabel} onChange={(e) => setPropLabel(e.target.value)} style={{width: '100%', padding: 8, marginBottom: 8}} />
+                <div style={{marginBottom: 6}}><strong style={{fontSize: 14}}>Entity</strong> <div style={{fontSize: 12, color: '#6b7280', display: 'inline-block', marginLeft: 8}}>— {ent.id}</div></div>
+                <label style={{display: 'block', fontSize: 12, color: '#374151', marginTop: 6}}>Label</label>
+                <input value={propLabel} onChange={(e) => setPropLabel(e.target.value)} style={{width: '100%', padding: '8px 10px', marginBottom: 8, borderRadius: 4, border: '1px solid #e5e7eb', boxSizing: 'border-box', lineHeight: '20px'}} />
                 <button onClick={saveEntityProperties} style={{padding: '8px 12px', borderRadius: 6, background: '#06b6d4', color: '#042c3c', border: 'none'}}>Save</button>
 
-                <hr style={{margin: '12px 0'}} />
+                <hr style={{margin: '12px 0', border: 'none', borderTop: '1px solid #eef2f7'}} />
                 <div style={{fontSize: 13, marginBottom: 6}}><strong>Attributes</strong></div>
                 <div style={{display: 'flex', gap: 8}}>
-                  <input placeholder='name' value={propAttrName} onChange={(e) => setPropAttrName(e.target.value)} style={{flex: 1, padding: 6}} />
-                  <input placeholder='type' value={propAttrType} onChange={(e) => setPropAttrType(e.target.value)} style={{width: 100, padding: 6}} />
+                  <input placeholder='name' value={propAttrName} onChange={(e) => setPropAttrName(e.target.value)} style={{flex: 1, padding: '8px 10px', borderRadius: 4, border: '1px solid #e5e7eb', boxSizing: 'border-box', lineHeight: '20px'}} />
+                  <input placeholder='type' value={propAttrType} onChange={(e) => setPropAttrType(e.target.value)} style={{width: 100, padding: '8px 10px', borderRadius: 4, border: '1px solid #e5e7eb', boxSizing: 'border-box', lineHeight: '20px'}} />
                 </div>
                 <div style={{marginTop: 8, display: 'flex', gap: 8}}>
                   <button onClick={addAttributeFromPanel} style={{padding: '6px 10px', borderRadius: 6}}>Add</button>
@@ -319,10 +367,16 @@ export const WhiteboardCanvas: React.FC = () => {
                         <div style={{fontSize: 13}}>{a.isForeign ? 'FK ' : ''}{a.name}{a.type ? `: ${a.type}` : ''}</div>
                         <div style={{fontSize: 11, color: '#6b7280'}}>{a.isPrimary ? 'Primary' : ''} {a.isForeign ? ' • Foreign' : ''}</div>
                       </div>
-                      <div style={{display: 'flex', gap: 8}}>
-                        <button onClick={() => { const op = { opId: `op-togglepk-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_TOGGLE_PK', payload: { id: ent.id, attrId: a.id } }; sendOps([op]) }} style={{padding: 6}}>PK</button>
-                        <button onClick={() => { const op = { opId: `op-remove-attr-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_REMOVE_ATTRIBUTE', payload: { id: ent.id, attrId: a.id } }; sendOps([op]) }} style={{padding: 6}}>Delete</button>
-                      </div>
+                              <div style={{display: 'flex', gap: 8}}>
+                                <button onClick={() => { const op = { opId: `op-togglepk-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_TOGGLE_PK', payload: { id: ent.id, attrId: a.id } }; sendOps([op]) }} style={{padding: 6, background: a.isPrimary ? '#06b6d4' : undefined, color: a.isPrimary ? '#042c3c' : undefined}}>PK</button>
+                                <button onClick={() => {
+                                  const updatedAttr = { ...a, isForeign: !a.isForeign }
+                                  const removeOp = { opId: `op-remove-attr-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_REMOVE_ATTRIBUTE', payload: { id: ent.id, attrId: a.id } }
+                                  const addOp = { opId: `op-add-attr-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_ADD_ATTRIBUTE', payload: { id: ent.id, attr: updatedAttr } }
+                                  sendOps([removeOp, addOp])
+                                }} style={{padding: 6, background: a.isForeign ? '#f97316' : undefined, color: a.isForeign ? '#071c1f' : undefined}}>FK</button>
+                                <button onClick={() => { const op = { opId: `op-remove-attr-${a.id}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_REMOVE_ATTRIBUTE', payload: { id: ent.id, attrId: a.id } }; sendOps([op]) }} style={{padding: 6}}>Delete</button>
+                              </div>
                     </div>
                   ))}
                 </div>
@@ -338,14 +392,18 @@ export const WhiteboardCanvas: React.FC = () => {
               <div>
                 <div style={{marginBottom: 8}}><strong>Relation</strong> — {rel.id}</div>
                 <label style={{display: 'block', fontSize: 12, color: '#374151'}}>Label</label>
-                <input value={propLabel} onChange={(e) => setPropLabel(e.target.value)} style={{width: '100%', padding: 8, marginBottom: 8}} />
+                <input value={propLabel} onChange={(e) => setPropLabel(e.target.value)} style={{width: '100%', padding: '8px 10px', marginBottom: 8, borderRadius: 4, border: '1px solid #e5e7eb', boxSizing: 'border-box', lineHeight: '20px'}} />
                 <label style={{display: 'block', fontSize: 12, color: '#374151'}}>Cardinality</label>
-                <select value={propRelCard} onChange={(e) => setPropRelCard(e.target.value)} style={{width: '100%', padding: 8, marginBottom: 8}}>
+                <select value={propRelCard} onChange={(e) => setPropRelCard(e.target.value)} style={{width: '100%', padding: '8px 10px', marginBottom: 8, boxSizing: 'border-box'}}>
                   <option value='1:1'>1:1</option>
                   <option value='1:N'>1:N</option>
                   <option value='N:1'>N:1</option>
                   <option value='N:M'>N:M</option>
                 </select>
+                <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+                  <input id={`fkcreate-${id}`} type='checkbox' checked={propRelCreateFk} onChange={(e) => setPropRelCreateFk(e.target.checked)} />
+                  <label htmlFor={`fkcreate-${id}`} style={{fontSize: 13, color: '#374151'}}>Create FK on many-side</label>
+                </div>
                 <div style={{display: 'flex', gap: 8}}>
                   <button onClick={saveRelationProperties} style={{padding: '8px 12px', borderRadius: 6}}>Save</button>
                 </div>
