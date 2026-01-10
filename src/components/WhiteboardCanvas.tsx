@@ -321,8 +321,36 @@ export const WhiteboardCanvas: React.FC = () => {
       clone.setAttribute('width', String(width))
       clone.setAttribute('height', String(height))
 
+      // append clone offscreen so computed styles can be read and inlined
+      const wrapper = document.createElement('div')
+      wrapper.style.position = 'absolute'
+      wrapper.style.left = '-9999px'
+      wrapper.style.top = '-9999px'
+      wrapper.style.width = rect.width + 'px'
+      wrapper.style.height = rect.height + 'px'
+      wrapper.appendChild(clone)
+      document.body.appendChild(wrapper)
+
+      // inline computed styles for better fidelity in exported image
+      const inlineProps = ['font-family','font-size','font-weight','fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','opacity','text-anchor','text-decoration','letter-spacing','word-spacing','font-style']
+      const elems = clone.querySelectorAll('*')
+      elems.forEach((el) => {
+        try {
+          const cs = window.getComputedStyle(el)
+          const htmlEl = el as HTMLElement
+          for (const p of inlineProps) {
+            const v = cs.getPropertyValue(p)
+            if (v) htmlEl.style.setProperty(p, v)
+          }
+        } catch (e) {
+          // ignore
+        }
+      })
+
       const serializer = new XMLSerializer()
       const svgString = serializer.serializeToString(clone)
+      // remove the temporary wrapper now that we've inlined styles
+      wrapper.remove()
       const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const img = new Image()
