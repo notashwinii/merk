@@ -226,11 +226,19 @@ export const WhiteboardCanvas: React.FC = () => {
         if (card.source === 'N' && card.target === '1') { fkTargetEntityId = rel.source; refEntityId = rel.target }
         else if (card.source === '1' && card.target === 'N') { fkTargetEntityId = rel.target; refEntityId = rel.source }
         if (fkTargetEntityId && refEntityId) {
+          const refEntity: any = (state as any).entities[refEntityId]
+          let refAttrId: string | undefined = undefined
+          let refAttrName: string | undefined = undefined
+          let refAttrType: string | undefined = undefined
+          if (refEntity && refEntity.attributes) {
+            const pk = refEntity.attributes.find((aa: any) => aa.isPrimary)
+            if (pk) { refAttrId = pk.id; refAttrName = pk.name; refAttrType = pk.type }
+          }
           const fkId = `fk-${refEntityId}-${Date.now()}`
-          const fkName = `fk_${refEntityId}`
-          const fkAttr = { id: fkId, name: fkName, type: 'string', isPrimary: false, isNullable: true, isForeign: true, references: { entityId: refEntityId } }
+          const fkName = refAttrName ? `${refEntity.label || refEntityId}_${refAttrName}` : `fk_${refEntityId}`
+          const fkAttr = { id: fkId, name: fkName, type: refAttrType || 'INTEGER', isPrimary: false, isNullable: true, isForeign: true, references: { entityId: refEntityId, attrId: refAttrId } }
           const fkOp = { opId: `op-add-attr-${fkId}-${Date.now()}`, actor: 'me', ts: Date.now(), type: 'ENTITY_ADD_ATTRIBUTE', payload: { id: fkTargetEntityId, attr: fkAttr } }
-          // send both relation update and fk add
+          // send FK add op
           sendOps([fkOp])
         }
       }
@@ -458,7 +466,15 @@ export const WhiteboardCanvas: React.FC = () => {
           const refEnt = st.entities[a.references.entityId]
           if (!refEnt) continue
           const refTable = sanitize(refEnt.label || refEnt.id)
-          const refCol = getPrimaryAttr(refEnt) || 'id'
+          // prefer explicit referenced attr id/name if provided
+          let refCol = 'id'
+          if (a.references.attrId) {
+            const refAttr = (refEnt.attributes || []).find((ra: any) => ra.id === a.references.attrId)
+            if (refAttr) refCol = sanitize(refAttr.name || refAttr.id)
+            else refCol = getPrimaryAttr(refEnt) || 'id'
+          } else {
+            refCol = getPrimaryAttr(refEnt) || 'id'
+          }
           const stmt = `ALTER TABLE "${table}" ADD FOREIGN KEY ("${col}") REFERENCES "${refTable}"("${refCol}");`
           statements.push(stmt)
         }

@@ -109,6 +109,12 @@ export async function applyOp(op: any) {
       // avoid adding duplicate attributes with same id
       if (!e.attributes.find(a => a.id === attr.id)) {
         e.attributes.push(attr)
+        // if incoming attribute is primary, ensure only one primary exists
+        if (attr.isPrimary) {
+          for (const a of e.attributes) {
+            if (a.id !== attr.id) a.isPrimary = false
+          }
+        }
         entityTs[id] = opTs
         emit()
       }
@@ -122,7 +128,17 @@ export async function applyOp(op: any) {
     const e = state.entities[id]
     if (e && e.attributes) {
       const a = e.attributes.find(a => a.id === attrId)
-      if (a) { a.isPrimary = !a.isPrimary; emit() }
+      if (a) {
+        const newVal = !a.isPrimary
+        // if setting primary on, unset others
+        if (newVal) {
+          for (const other of e.attributes) {
+            other.isPrimary = false
+          }
+        }
+        a.isPrimary = newVal
+        emit()
+      }
     }
   } else if (t === 'RELATION_CREATE') {
     const r = op.payload as Relation
