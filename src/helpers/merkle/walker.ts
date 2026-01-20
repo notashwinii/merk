@@ -7,8 +7,8 @@ export interface OpApplier {
 }
 
 export function createWalker(adapter: any, applier: OpApplier) {
-  const seenCids: Set<string> = new Set()
-  const seenOps: Set<string> = new Set()
+  const seenCids: Set<string> = new Set() // Processed nodes
+  const seenOps: Set<string> = new Set() // Applied operations
   const syncing: Set<string> = new Set()
 
   async function processNode(node: Node) {
@@ -61,6 +61,7 @@ export function createWalker(adapter: any, applier: OpApplier) {
   }
 
   function topoSortNodes(nodesMap: Map<string, Node>): string[] {
+    // Indegree computation (Kahn step 1)
     const indegree = new Map<string, number>()
     const adj = new Map<string, string[]>()
     nodesMap.forEach((node, cid) => {
@@ -87,7 +88,7 @@ export function createWalker(adapter: any, applier: OpApplier) {
       const author = (node.meta && node.meta.author) || (Array.isArray(node.payload) && node.payload[0] && node.payload[0].actor) || ''
       return { minTs, author, cid }
     }
-
+    // Initialize queue with indegree-0 nodes (Kahn step 2)
     const q: string[] = []
     indegree.forEach((deg, cid) => {
       if (deg === 0) q.push(cid)
@@ -99,6 +100,8 @@ export function createWalker(adapter: any, applier: OpApplier) {
       return A.cid < B.cid ? -1 : 1
     })
     const order: string[] = []
+
+    // Repeatedly remove, output, and relax edges(Kahn step 3)
     while (q.length > 0) {
       const n = q.shift() as string
       order.push(n)
