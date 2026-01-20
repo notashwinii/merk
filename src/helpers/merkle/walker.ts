@@ -12,27 +12,18 @@ export function createWalker(adapter: any, applier: OpApplier) {
   const syncing: Set<string> = new Set()
 
   async function processNode(node: Node) {
+    // When a node is received directly, store it and trigger a sync
+    // which will fetch the subgraph and apply nodes in deterministic order.
     const cid = await cidFor(node)
     if (seenCids.has(cid)) return
-    if (Array.isArray(node.payload)) {
-      for (const op of node.payload) {
-        if (!op || !op.opId) continue
-        if (seenOps.has(op.opId)) continue
-        try {
-          await applier.applyOp(op)
-        } catch (e) {
-          console.warn('applyOp error', e)
-        }
-        seenOps.add(op.opId)
-      }
-    }
+    // persist the node locally so syncRoot can discover it from dagStore
     await dagStore.Put(node)
-    seenCids.add(cid)
+    // trigger a sync rooted at this cid which will apply nodes in topo order
     try {
-      if (adapter && typeof adapter.updateHeads === 'function') {
-        await adapter.updateHeads(cid, node)
-      }
+      await syncRoot(cid)
     } catch (e) {
+      // non-fatal; log and continue
+      console.warn('processNode syncRoot error', e)
     }
   }
 
@@ -61,7 +52,7 @@ export function createWalker(adapter: any, applier: OpApplier) {
   }
 
   function topoSortNodes(nodesMap: Map<string, Node>): string[] {
-    // Indegree computation (Kahn step 1)
+    // Deterministic Kahn topological sort using node CIDs as tie-breakers
     const indegree = new Map<string, number>()
     const adj = new Map<string, string[]>()
     nodesMap.forEach((node, cid) => {
@@ -73,32 +64,15 @@ export function createWalker(adapter: any, applier: OpApplier) {
         indegree.set(cid, (indegree.get(cid) || 0) + 1)
       }
     })
-    function sortKey(cid: string) {
-      const node = nodesMap.get(cid)!
-      let minTs = Number.MAX_SAFE_INTEGER
-      if (Array.isArray(node.payload) && node.payload.length > 0) {
-        for (const op of node.payload) {
-          if (op && typeof op.ts === 'number' && op.ts < minTs) minTs = op.ts
-        }
-      }
-      if (minTs === Number.MAX_SAFE_INTEGER) {
-        if (node.meta && typeof node.meta.ts === 'number') minTs = node.meta.ts
-        else minTs = 0
-      }
-      const author = (node.meta && node.meta.author) || (Array.isArray(node.payload) && node.payload[0] && node.payload[0].actor) || ''
-      return { minTs, author, cid }
-    }
+
     // Initialize queue with indegree-0 nodes (Kahn step 2)
     const q: string[] = []
     indegree.forEach((deg, cid) => {
       if (deg === 0) q.push(cid)
     })
-    q.sort((a, b) => {
-      const A = sortKey(a), B = sortKey(b)
-      if (A.minTs !== B.minTs) return A.minTs - B.minTs
-      if (A.author !== B.author) return A.author < B.author ? -1 : 1
-      return A.cid < B.cid ? -1 : 1
-    })
+
+    // Tie-breaker: lexicographic order of CID (deterministic)
+    q.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     const order: string[] = []
 
     // Repeatedly remove, output, and relax edges(Kahn step 3)
@@ -110,12 +84,7 @@ export function createWalker(adapter: any, applier: OpApplier) {
         indegree.set(m, (indegree.get(m) || 0) - 1)
         if (indegree.get(m) === 0) {
           q.push(m)
-          q.sort((a, b) => {
-            const A = sortKey(a), B = sortKey(b)
-            if (A.minTs !== B.minTs) return A.minTs - B.minTs
-            if (A.author !== B.author) return A.author < B.author ? -1 : 1
-            return A.cid < B.cid ? -1 : 1
-          })
+          q.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
         }
       }
     }
@@ -123,11 +92,35 @@ export function createWalker(adapter: any, applier: OpApplier) {
     return order
   }
 
+  async function applyNodeDirect(node: Node, cid: string) {
+    if (seenCids.has(cid)) return
+    if (Array.isArray(node.payload)) {
+      for (const op of node.payload) {
+        if (!op || !op.opId) continue
+        if (seenOps.has(op.opId)) continue
+        try {
+          await applier.applyOp(op)
+        } catch (e) {
+          console.warn('applyOp error', e)
+        }
+        seenOps.add(op.opId)
+      }
+    }
+    await dagStore.Put(node)
+    seenCids.add(cid)
+    try {
+      if (adapter && typeof adapter.updateHeads === 'function') {
+        await adapter.updateHeads(cid, node)
+      }
+    } catch (e) {
+    }
+  }
+
   async function applyNodesInOrder(order: string[], nodesMap: Map<string, Node>) {
     for (const cid of order) {
       const node = nodesMap.get(cid)
       if (!node) continue
-      await processNode(node)
+      await applyNodeDirect(node, cid)
     }
   }
 
