@@ -105,6 +105,14 @@ export const App: React.FC = () => {
                                 </ul>
                             </div>
                         </div>
+                        <div style={{marginTop: 18}}>
+                            <strong>Implementation</strong>
+                            <div style={{marginTop: 8, color: '#6b7280', fontSize: 13}}>
+                                <p style={{margin: '6px 0'}}>Merk is a single-page React + TypeScript application. Realtime peer-to-peer connectivity is provided by PeerJS, and global UI/state flows use Redux Toolkit.</p>
+                                <p style={{margin: '6px 0'}}>Diagram data is organized using a Merkle DAG approach; content is canonicalized, chunked, and referenced by content IDs (CIDs) so changes can be synchronized deterministically without a central server.</p>
+                                <p style={{margin: '6px 0'}}>Edits are applied optimistically and broadcast to peers. The DAG walker, canonicalization, and CID utilities allow compact export/import, replay, and deterministic merging of updates.</p>
+                            </div>
+                        </div>
                     </div>
 
                    
