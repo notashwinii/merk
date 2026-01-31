@@ -80,11 +80,34 @@ export const App: React.FC = () => {
 
     if (!peer.started) {
         return (
-            <div style={{height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff'}}>
-                <div style={{textAlign: 'center'}}>
-                    <h1 style={{fontSize: 64, margin: 0, fontWeight: 800, color: '#000'}}>Merk - ER Diagram Whiteboard</h1>
-                    <div style={{height: 24}} />
-                    <Button size="large" type="default" onClick={handleStartSession} loading={peer.loading}>Get started</Button>
+            <div style={{minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f7f9fc', padding: 32}}>
+                <div style={{maxWidth: 1000, width: '100%', display: 'flex', gap: 32, alignItems: 'flex-start'}}>
+                    <div style={{flex: 1}}>
+                        <Title style={{margin: 0, fontSize: 48}}>Merk</Title>
+                        <div style={{height: 8}} />
+                        <div style={{color: '#374151', fontSize: 18, marginBottom: 12}}>Collaborative ER diagram whiteboard</div>
+                        <div style={{marginBottom: 20, color: '#6b7280'}}>Merk lets teams sketch entity-relationship diagrams, collaborate live over peer-to-peer connections, and export models for documentation.</div>
+
+                        <Space size="middle">
+                            <Button type="primary" size="large" onClick={handleStartSession} loading={peer.loading}>Open Whiteboard</Button>
+                            <Button size="large" onClick={() => window.open('https://github.com/notashwinii/merk', '_blank')}>View on GitHub</Button>
+                        </Space>
+
+                        <div style={{height: 18}} />
+
+                        <div style={{display: 'flex', gap: 24, color: '#111827'}}>
+                            <div>
+                                <strong>Features</strong>
+                                <ul style={{margin: '8px 0 0 18px'}}>
+                                    <li>Real-time peer-to-peer collaboration</li>
+                                    <li>Drag &amp; drop entities, relationships, and attributes</li>
+                                    <li>Export diagrams and share session links</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                   
                 </div>
             </div>
         )
