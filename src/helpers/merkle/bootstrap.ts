@@ -1,8 +1,7 @@
 import { createMerleAdapter } from './adapter'
 import { createWalker } from './walker'
-import * as dagStore from './dagStore'
 import { PeerConnection, DataType } from '../peer'
-import { applyOp, subscribe as subscribeWB, applySnapshot, getState as getWBState } from '../whiteboard'
+import { applyOp, applySnapshot, getState as getWBState } from '../whiteboard'
 
 let adapter: any = null
 let walker: any = null

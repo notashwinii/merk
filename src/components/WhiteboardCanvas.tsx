@@ -42,16 +42,9 @@ export const WhiteboardCanvas: React.FC = () => {
 
   const svgRef = useRef<SVGSVGElement | null>(null)
 
-  const clientToWorld = useCallback((clientX: number, clientY: number) => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    const cx = clientX - (rect?.left || 0)
-    const cy = clientY - (rect?.top || 0)
-    const worldX = (cx - pan.x) / scale
-    const worldY = (cy - pan.y) / scale
-    return { x: worldX, y: worldY }
-  }, [pan, scale])
+  // clientToWorld removed (unused) — conversions can be re-added when needed.
 
-  const handleAdd = async () => {
+  const handleAdd = useCallback(async () => {
     const id = makeId()
     const x = 100 + Math.random() * 300
     const y = 80 + Math.random() * 240
@@ -65,7 +58,7 @@ export const WhiteboardCanvas: React.FC = () => {
         await adapter.broadcastRoot(undefined, node)
       }
     } catch (e) { console.warn(e); message.error('Failed to add entity') }
-  }
+  }, [])
 
   const onNodePointerDown = (e: React.PointerEvent, ent: Entity) => {
     (e.target as Element).setPointerCapture(e.pointerId)
@@ -276,7 +269,7 @@ export const WhiteboardCanvas: React.FC = () => {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [handleAdd])
+  }, [handleAdd, selected])
 
   // Sync the properties panel fields when selection or state changes
   useEffect(() => {
